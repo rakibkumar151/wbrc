@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WebRTC UDP Tester</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        body { font-family: sans-serif; padding: 20px; background: #111; color: #eee; }
+        button { padding: 10px 20px; background: #069; color: white; border: none; cursor: pointer; border-radius: 4px; }
+        button:hover { background: #08b; }
+        pre { background: #222; padding: 15px; border-left: 4px solid #069; overflow-x: auto; }
+        .success { color: #0f0; }
+        .error { color: #f00; }
+    </style>
+</head>
+<body>
+    <h2>WebRTC DataChannel UDP Tester</h2>
+    <p>Deploy this app to your server. Click the button to check if your server allows UDP WebRTC DataChannels.</p>
+    <button id="start">Test UDP Connection</button>
+    
+    <h3>Logs:</h3>
+    <pre id="log"></pre>
+
+    <script>
+        const log = (msg, className = '') => {
+            const el = document.getElementById('log');
+            el.innerHTML += `<span class="${className}">${new Date().toISOString().split('T')[1].split('.')[0]} - ${msg}</span>\n`;
+        };
+
+        const socket = io();
+
+        document.getElementById('start').onclick = async () => {
+            document.getElementById('log').innerHTML = '';
+            log('Starting WebRTC Initialization...');
+            
+            const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+            
+            const channel = pc.createDataChannel('test');
+            channel.onopen = () => {
+                log('UDP DataChannel IS OPEN!', 'success');
+                log('WebRTC UDP IS FULLY SUPPORTED ON THIS SERVER!', 'success');
+                log('Sending test payload via UDP...');
+                channel.send('Hello from browser over UDP!');
+            };
+            
+            channel.onmessage = (e) => {
+                log('Received reply from server over UDP: ' + e.data, 'success');
+            };
+
+            pc.onicecandidate = (e) => {
+                if (e.candidate) {
+                    socket.emit('candidate', { candidate: e.candidate.candidate, mid: e.candidate.sdpMid });
+                }
+            };
+
+            log('Creating WebRTC Offer...');
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+            
+            log('Sending signaling data via WebSockets (TCP)...');
+            socket.emit('offer', { sdp: offer.sdp, type: offer.type });
+
+            socket.on('answer', async (answer) => {
+                log('Received Answer from server, setting remote description...');
+                await pc.setRemoteDescription(new RTCSessionDescription(answer));
+            });
+
+            socket.on('candidate', (c) => {
+                pc.addIceCandidate(new RTCIceCandidate({ candidate: c.candidate, sdpMid: c.mid }));
+            });
+            
+            pc.onconnectionstatechange = () => {
+                log('Connection state: ' + pc.connectionState);
+                if (pc.connectionState === 'failed') {
+                    log('WebRTC connection failed. Your server likely blocks UDP traffic.', 'error');
+                }
+            };
+        };
+    </script>
+</body>
+</html>

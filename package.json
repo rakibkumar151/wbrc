@@ -1,0 +1,14 @@
+{
+  "name": "webrtc-udp-tester",
+  "version": "1.0.0",
+  "description": "Minimal WebRTC DataChannel UDP Test",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "node-datachannel": "^0.6.2",
+    "socket.io": "^4.6.1"
+  }
+}
