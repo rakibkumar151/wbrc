@@ -48,8 +48,23 @@ io.on('connection', (socket) => {
   console.log('[Signaling] Browser connected via WebSockets');
   
   // Create WebRTC Peer Connection using cached ICE servers or fallback
-  const ice = cachedIceServers ? cachedIceServers : [{ urls: 'stun:stun.l.google.com:19302' }];
-  const peer = new dc.PeerConnection("server", { iceServers: ice });
+  let nodeIceServers = [{ urls: 'stun:stun.l.google.com:19302' }];
+  if (cachedIceServers) {
+    nodeIceServers = JSON.parse(JSON.stringify(cachedIceServers)); // deep copy
+    nodeIceServers.forEach(server => {
+      if (server.urls) {
+        let urls = Array.isArray(server.urls) ? server.urls : [server.urls];
+        server.urls = urls.map(u => {
+          // libdatachannel parser crashes on ?transport=tcp in the port string
+          u = u.replace('?transport=tcp', '');
+          // Force turns (TLS/TCP) for port 443
+          if (u.includes(':443')) u = u.replace('turn:', 'turns:');
+          return u;
+        });
+      }
+    });
+  }
+  const peer = new dc.PeerConnection("server", { iceServers: nodeIceServers });
   
   peer.onLocalDescription((sdp, type) => {
     socket.emit('answer', { sdp, type });
