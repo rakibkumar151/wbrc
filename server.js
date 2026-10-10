@@ -5,7 +5,7 @@ const dc = require('node-datachannel');
 const path = require('path');
 
 // Disable verbose logs for cleaner output
-dc.initLogger("Fatal");
+// (initLogger removed for compatibility with new node-datachannel versions)
 
 const app = express();
 const server = http.createServer(app);
