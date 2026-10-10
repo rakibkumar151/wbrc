@@ -47,19 +47,30 @@ app.get('/ice-servers', async (req, res) => {
 io.on('connection', (socket) => {
   console.log('[Signaling] Browser connected via WebSockets');
   
-  // Create WebRTC Peer Connection using cached ICE servers or fallback
-  let nodeIceServers = [{ urls: 'stun:stun.l.google.com:19302' }];
+  // Create WebRTC Peer Connection using parsed ICE strings
+  let nodeIceServers = ["stun:stun.l.google.com:19302"];
   if (cachedIceServers) {
-    nodeIceServers = JSON.parse(JSON.stringify(cachedIceServers)); // deep copy
-    nodeIceServers.forEach(server => {
+    nodeIceServers = [];
+    cachedIceServers.forEach(server => {
       if (server.urls) {
         let urls = Array.isArray(server.urls) ? server.urls : [server.urls];
-        server.urls = urls.map(u => {
-          // libdatachannel parser crashes on ?transport=tcp in the port string
+        urls.forEach(u => {
+          // libdatachannel expects array of STRINGS, e.g. turn:user:pass@host:port
           u = u.replace('?transport=tcp', '');
-          // Force turns (TLS/TCP) for port 443
           if (u.includes(':443')) u = u.replace('turn:', 'turns:');
-          return u;
+          
+          if (u.startsWith('turn:') || u.startsWith('turns:')) {
+             const scheme = u.split(':')[0];
+             const hostPort = u.split(':').slice(1).join(':'); // e.g. raklin.metered.live:443
+             
+             if (server.username && server.credential) {
+                nodeIceServers.push(`${scheme}:${server.username}:${server.credential}@${hostPort}`);
+             } else {
+                nodeIceServers.push(u);
+             }
+          } else {
+             nodeIceServers.push(u);
+          }
         });
       }
     });
