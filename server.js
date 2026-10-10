@@ -13,68 +13,36 @@ const io = new Server(server);
 
 app.use(express.static(path.join(__dirname, 'public')));
 
-let cachedIceServers = null;
-
-app.get('/ice-servers', async (req, res) => {
-  if (cachedIceServers) return res.json(cachedIceServers);
-  try {
-    const response = await fetch("https://raklin.metered.live/api/v1/turn/credentials?apiKey=XIX_JYnT_APbHQK_u8qH1Sh_jeB2N3Sy56gQpoX753bbj2df");
-    const data = await response.json();
-    if (data.error) {
-       console.error("Metered API Error:", data.error);
-       return res.json([{ urls: 'stun:stun.l.google.com:19302' }]);
-    }
-    // Force TCP for TURN servers
-    cachedIceServers = data.map(server => {
-      if (server.urls) {
-         let urls = Array.isArray(server.urls) ? server.urls : [server.urls];
-         server.urls = urls.map(u => {
-             if (u.startsWith('turn:') && !u.includes('?transport=')) {
-                 return u + '?transport=tcp';
-             }
-             return u;
-         });
-      }
-      return server;
-    });
-    res.json(cachedIceServers);
-  } catch(e) {
-    console.error("Failed to fetch ICE servers:", e);
-    res.json([{ urls: 'stun:stun.l.google.com:19302' }]);
+const browserIceServers = [
+  {
+    urls: "stun:stun.relay.metered.ca:80",
+  },
+  {
+    urls: "turns:global.relay.metered.ca:443?transport=tcp",
+    username: "358e8da8eb7b3766dc16a240",
+    credential: "yzK8hC9fEuXVoGxA",
+  },
+  {
+    urls: "turn:global.relay.metered.ca:80?transport=tcp",
+    username: "358e8da8eb7b3766dc16a240",
+    credential: "yzK8hC9fEuXVoGxA",
   }
+];
+
+// Pre-formatted for libdatachannel C++ parser (using turns/TCP on 443)
+const nodeIceServers = [
+  "stun:stun.relay.metered.ca:80",
+  "turns:358e8da8eb7b3766dc16a240:yzK8hC9fEuXVoGxA@global.relay.metered.ca:443"
+];
+
+app.get('/ice-servers', (req, res) => {
+  res.json(browserIceServers);
 });
 
 io.on('connection', (socket) => {
   console.log('[Signaling] Browser connected via WebSockets');
   
-  // Create WebRTC Peer Connection using parsed ICE strings
-  let nodeIceServers = ["stun:stun.l.google.com:19302"];
-  if (cachedIceServers) {
-    nodeIceServers = [];
-    cachedIceServers.forEach(server => {
-      if (server.urls) {
-        let urls = Array.isArray(server.urls) ? server.urls : [server.urls];
-        urls.forEach(u => {
-          // libdatachannel expects array of STRINGS, e.g. turn:user:pass@host:port
-          u = u.replace('?transport=tcp', '');
-          if (u.includes(':443')) u = u.replace('turn:', 'turns:');
-          
-          if (u.startsWith('turn:') || u.startsWith('turns:')) {
-             const scheme = u.split(':')[0];
-             const hostPort = u.split(':').slice(1).join(':'); // e.g. raklin.metered.live:443
-             
-             if (server.username && server.credential) {
-                nodeIceServers.push(`${scheme}:${server.username}:${server.credential}@${hostPort}`);
-             } else {
-                nodeIceServers.push(u);
-             }
-          } else {
-             nodeIceServers.push(u);
-          }
-        });
-      }
-    });
-  }
+  // Create WebRTC Peer Connection using static TCP TURN servers
   const peer = new dc.PeerConnection("server", { iceServers: nodeIceServers });
   
   peer.onLocalDescription((sdp, type) => {
