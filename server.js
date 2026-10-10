@@ -13,11 +13,43 @@ const io = new Server(server);
 
 app.use(express.static(path.join(__dirname, 'public')));
 
+let cachedIceServers = null;
+
+app.get('/ice-servers', async (req, res) => {
+  if (cachedIceServers) return res.json(cachedIceServers);
+  try {
+    const response = await fetch("https://raklin.metered.live/api/v1/turn/credentials?apiKey=XIX_JYnT_APbHQK_u8qH1Sh_jeB2N3Sy56gQpoX753bbj2df");
+    const data = await response.json();
+    if (data.error) {
+       console.error("Metered API Error:", data.error);
+       return res.json([{ urls: 'stun:stun.l.google.com:19302' }]);
+    }
+    // Force TCP for TURN servers
+    cachedIceServers = data.map(server => {
+      if (server.urls) {
+         let urls = Array.isArray(server.urls) ? server.urls : [server.urls];
+         server.urls = urls.map(u => {
+             if (u.startsWith('turn:') && !u.includes('?transport=')) {
+                 return u + '?transport=tcp';
+             }
+             return u;
+         });
+      }
+      return server;
+    });
+    res.json(cachedIceServers);
+  } catch(e) {
+    console.error("Failed to fetch ICE servers:", e);
+    res.json([{ urls: 'stun:stun.l.google.com:19302' }]);
+  }
+});
+
 io.on('connection', (socket) => {
   console.log('[Signaling] Browser connected via WebSockets');
   
-  // Create WebRTC Peer Connection
-  const peer = new dc.PeerConnection("server", { iceServers: ["stun:stun.l.google.com:19302"] });
+  // Create WebRTC Peer Connection using cached ICE servers or fallback
+  const ice = cachedIceServers ? cachedIceServers : [{ urls: 'stun:stun.l.google.com:19302' }];
+  const peer = new dc.PeerConnection("server", { iceServers: ice });
   
   peer.onLocalDescription((sdp, type) => {
     socket.emit('answer', { sdp, type });
